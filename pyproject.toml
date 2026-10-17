@@ -1,0 +1,42 @@
+[project]
+name = "minitoolrl"
+version = "0.1.0"
+description = "Tool-use training and composition evaluation on Qwen3-0.6B"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+  # Floors only. The two supported hosts need different exact versions and
+  # cannot share one pin set, so the pins live in the extras below.
+  "torch>=2.12",
+  "transformers>=4.57",
+]
+
+[project.optional-dependencies]
+# CPU/dev host: input verification, CPU unit tests and packing.
+cpu = [
+  "torch==2.12.1",
+  "transformers==4.57.6",
+]
+# Production GPU host: DeepSpeed ZeRO-2 training backend and the vLLM sampling
+# backend, plus the pyzmq command channel between the GRPO trainer and the
+# resident vLLM process. Network access is needed for the first install.
+# vllm 0.31.0 itself requires torch==2.13.0 and transformers>=5.10.4,<5.18.0,
+# so those are the pins here; they narrow the floors above instead of fighting
+# them. cpu and gpu are alternatives, not layers: never install both.
+gpu = [
+  "torch==2.13.0",
+  "transformers>=5.10.4,<5.18.0",
+  "deepspeed==0.19.7",
+  "vllm==0.31.0",
+  "pyzmq>=26.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["minitoolrl*"]
+exclude = ["minitoolrl.artifacts*"]
+

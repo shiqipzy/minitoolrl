@@ -1,0 +1,705 @@
+{
+  "status": "complete",
+  "run_id": "tool_composition_qwen3_20261016_registry_lr2e6_full144_r1",
+  "pool_sha256": "ca53dcd1d4dd7721ec17fc4a7e217146f0ae81688a174eaf476218930016261e",
+  "models": {
+    "SFT": {
+      "per_family": {
+        "refund_with_credit": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 59,
+              "n": 60
+            },
+            "B": {
+              "success": 58,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.975,
+          "both_wordings_success": 58,
+          "both_wordings_rate": 0.9666666666666667,
+          "either_wording_success": 59,
+          "either_wording_rate": 0.9833333333333333
+        },
+        "partial_refund_restock_ticket": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 17,
+              "n": 60
+            },
+            "B": {
+              "success": 6,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.19166666666666668,
+          "both_wordings_success": 4,
+          "both_wordings_rate": 0.06666666666666667,
+          "either_wording_success": 19,
+          "either_wording_rate": 0.31666666666666665
+        },
+        "cancel_refund_release": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 11,
+              "n": 60
+            },
+            "B": {
+              "success": 14,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.20833333333333334,
+          "both_wordings_success": 0,
+          "both_wordings_rate": 0.0,
+          "either_wording_success": 25,
+          "either_wording_rate": 0.4166666666666667
+        }
+      },
+      "macro_mean_single_prompt_success": 0.4583333333333333,
+      "macro_both_wordings_rate": 0.3444444444444445,
+      "failure_tags": {
+        "refund_with_credit": {
+          "A": {
+            "wrong_credit": 1,
+            "wrong_amount": 1
+          },
+          "B": {
+            "wrong_credit": 2,
+            "wrong_amount": 2
+          }
+        },
+        "partial_refund_restock_ticket": {
+          "A": {
+            "wrong_inventory": 30,
+            "missing_ticket": 28,
+            "collateral_inventory": 12
+          },
+          "B": {
+            "missing_ticket": 49,
+            "wrong_inventory": 30,
+            "collateral_inventory": 8
+          }
+        },
+        "cancel_refund_release": {
+          "A": {
+            "wrong_refund": 8,
+            "wrong_amount": 8,
+            "wrong_reservation": 15,
+            "wrong_shipment_status": 30
+          },
+          "B": {
+            "wrong_refund": 45,
+            "wrong_amount": 45,
+            "wrong_reservation": 1
+          }
+        }
+      }
+    },
+    "G0": {
+      "per_family": {
+        "refund_with_credit": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 59,
+              "n": 60
+            },
+            "B": {
+              "success": 59,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.9833333333333333,
+          "both_wordings_success": 59,
+          "both_wordings_rate": 0.9833333333333333,
+          "either_wording_success": 59,
+          "either_wording_rate": 0.9833333333333333
+        },
+        "partial_refund_restock_ticket": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 17,
+              "n": 60
+            },
+            "B": {
+              "success": 6,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.19166666666666668,
+          "both_wordings_success": 4,
+          "both_wordings_rate": 0.06666666666666667,
+          "either_wording_success": 19,
+          "either_wording_rate": 0.31666666666666665
+        },
+        "cancel_refund_release": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 9,
+              "n": 60
+            },
+            "B": {
+              "success": 14,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.19166666666666668,
+          "both_wordings_success": 0,
+          "both_wordings_rate": 0.0,
+          "either_wording_success": 23,
+          "either_wording_rate": 0.38333333333333336
+        }
+      },
+      "macro_mean_single_prompt_success": 0.45555555555555555,
+      "macro_both_wordings_rate": 0.35000000000000003,
+      "failure_tags": {
+        "refund_with_credit": {
+          "A": {
+            "wrong_credit": 1,
+            "wrong_amount": 1
+          },
+          "B": {
+            "wrong_credit": 1,
+            "wrong_amount": 1
+          }
+        },
+        "partial_refund_restock_ticket": {
+          "A": {
+            "wrong_inventory": 30,
+            "missing_ticket": 28,
+            "collateral_inventory": 13
+          },
+          "B": {
+            "missing_ticket": 48,
+            "wrong_inventory": 30,
+            "collateral_inventory": 8
+          }
+        },
+        "cancel_refund_release": {
+          "A": {
+            "wrong_refund": 9,
+            "wrong_amount": 9,
+            "wrong_reservation": 19,
+            "wrong_shipment_status": 28
+          },
+          "B": {
+            "wrong_refund": 45,
+            "wrong_amount": 45,
+            "collateral_inventory": 1,
+            "wrong_reservation": 1
+          }
+        }
+      }
+    },
+    "C_blocked": {
+      "per_family": {
+        "refund_with_credit": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 60,
+              "n": 60
+            },
+            "B": {
+              "success": 60,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 1.0,
+          "both_wordings_success": 60,
+          "both_wordings_rate": 1.0,
+          "either_wording_success": 60,
+          "either_wording_rate": 1.0
+        },
+        "partial_refund_restock_ticket": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 27,
+              "n": 60
+            },
+            "B": {
+              "success": 10,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.30833333333333335,
+          "both_wordings_success": 10,
+          "both_wordings_rate": 0.16666666666666666,
+          "either_wording_success": 27,
+          "either_wording_rate": 0.45
+        },
+        "cancel_refund_release": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 6,
+              "n": 60
+            },
+            "B": {
+              "success": 15,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.175,
+          "both_wordings_success": 0,
+          "both_wordings_rate": 0.0,
+          "either_wording_success": 21,
+          "either_wording_rate": 0.35
+        }
+      },
+      "macro_mean_single_prompt_success": 0.49444444444444446,
+      "macro_both_wordings_rate": 0.3888888888888889,
+      "failure_tags": {
+        "refund_with_credit": {
+          "A": {},
+          "B": {}
+        },
+        "partial_refund_restock_ticket": {
+          "A": {
+            "wrong_inventory": 30,
+            "missing_ticket": 9,
+            "collateral_inventory": 1
+          },
+          "B": {
+            "missing_ticket": 42,
+            "wrong_inventory": 30,
+            "collateral_inventory": 4
+          }
+        },
+        "cancel_refund_release": {
+          "A": {
+            "wrong_reservation": 24,
+            "wrong_shipment_status": 30,
+            "wrong_refund": 1,
+            "wrong_amount": 1
+          },
+          "B": {
+            "wrong_refund": 45,
+            "wrong_amount": 45
+          }
+        }
+      }
+    },
+    "C_mixed": {
+      "per_family": {
+        "refund_with_credit": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 60,
+              "n": 60
+            },
+            "B": {
+              "success": 60,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 1.0,
+          "both_wordings_success": 60,
+          "both_wordings_rate": 1.0,
+          "either_wording_success": 60,
+          "either_wording_rate": 1.0
+        },
+        "partial_refund_restock_ticket": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 16,
+              "n": 60
+            },
+            "B": {
+              "success": 6,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.18333333333333332,
+          "both_wordings_success": 5,
+          "both_wordings_rate": 0.08333333333333333,
+          "either_wording_success": 17,
+          "either_wording_rate": 0.2833333333333333
+        },
+        "cancel_refund_release": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 18,
+              "n": 60
+            },
+            "B": {
+              "success": 15,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.275,
+          "both_wordings_success": 0,
+          "both_wordings_rate": 0.0,
+          "either_wording_success": 33,
+          "either_wording_rate": 0.55
+        }
+      },
+      "macro_mean_single_prompt_success": 0.4861111111111111,
+      "macro_both_wordings_rate": 0.3611111111111111,
+      "failure_tags": {
+        "refund_with_credit": {
+          "A": {},
+          "B": {}
+        },
+        "partial_refund_restock_ticket": {
+          "A": {
+            "wrong_inventory": 30,
+            "missing_ticket": 30,
+            "collateral_inventory": 11
+          },
+          "B": {
+            "missing_ticket": 49,
+            "wrong_inventory": 30,
+            "collateral_inventory": 8
+          }
+        },
+        "cancel_refund_release": {
+          "A": {
+            "wrong_shipment_status": 22,
+            "wrong_reservation": 18,
+            "wrong_refund": 5,
+            "wrong_amount": 5
+          },
+          "B": {
+            "wrong_refund": 45,
+            "wrong_amount": 45,
+            "collateral_inventory": 3,
+            "wrong_order_status": 1,
+            "tool_error": 1
+          }
+        }
+      }
+    },
+    "U_mixed": {
+      "per_family": {
+        "refund_with_credit": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 60,
+              "n": 60
+            },
+            "B": {
+              "success": 60,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 1.0,
+          "both_wordings_success": 60,
+          "both_wordings_rate": 1.0,
+          "either_wording_success": 60,
+          "either_wording_rate": 1.0
+        },
+        "partial_refund_restock_ticket": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 15,
+              "n": 60
+            },
+            "B": {
+              "success": 2,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.14166666666666666,
+          "both_wordings_success": 2,
+          "both_wordings_rate": 0.03333333333333333,
+          "either_wording_success": 15,
+          "either_wording_rate": 0.25
+        },
+        "cancel_refund_release": {
+          "worlds": 60,
+          "by_variant": {
+            "A": {
+              "success": 29,
+              "n": 60
+            },
+            "B": {
+              "success": 15,
+              "n": 60
+            }
+          },
+          "mean_single_prompt_success": 0.36666666666666664,
+          "both_wordings_success": 2,
+          "both_wordings_rate": 0.03333333333333333,
+          "either_wording_success": 42,
+          "either_wording_rate": 0.7
+        }
+      },
+      "macro_mean_single_prompt_success": 0.5027777777777778,
+      "macro_both_wordings_rate": 0.35555555555555557,
+      "failure_tags": {
+        "refund_with_credit": {
+          "A": {},
+          "B": {}
+        },
+        "partial_refund_restock_ticket": {
+          "A": {
+            "wrong_inventory": 30,
+            "missing_ticket": 33,
+            "collateral_inventory": 16,
+            "wrong_order_status": 1,
+            "truncated": 1
+          },
+          "B": {
+            "missing_ticket": 55,
+            "wrong_inventory": 30,
+            "collateral_inventory": 15
+          }
+        },
+        "cancel_refund_release": {
+          "A": {
+            "wrong_shipment_status": 15,
+            "wrong_reservation": 11,
+            "collateral_inventory": 3,
+            "missing_refund": 1,
+            "wrong_amount": 2,
+            "wrong_order_status": 2,
+            "truncated": 1,
+            "tool_error": 2,
+            "wrong_refund": 1
+          },
+          "B": {
+            "wrong_refund": 45,
+            "wrong_amount": 45,
+            "wrong_order_status": 1,
+            "truncated": 2,
+            "tool_error": 2,
+            "collateral_inventory": 5
+          }
+        }
+      }
+    }
+  },
+  "comparisons": {
+    "G0-SFT": {
+      "mean_single_prompt_success": {
+        "point": -0.002777777777777778,
+        "ci_low": -0.011111111111111113,
+        "ci_high": 0.005555555555555557,
+        "draws": 10000,
+        "seed": 20260922,
+        "point_by_family": {
+          "refund_with_credit": 0.008333333333333333,
+          "partial_refund_restock_ticket": 0.0,
+          "cancel_refund_release": -0.016666666666666666
+        }
+      },
+      "both_wordings_rate": {
+        "point": 0.005555555555555556,
+        "ci_low": 0.0,
+        "ci_high": 0.016666666666666666,
+        "draws": 10000,
+        "seed": 20260923,
+        "point_by_family": {
+          "refund_with_credit": 0.016666666666666666,
+          "partial_refund_restock_ticket": 0.0,
+          "cancel_refund_release": 0.0
+        }
+      }
+    },
+    "C_mixed-U_mixed": {
+      "mean_single_prompt_success": {
+        "point": -0.016666666666666666,
+        "ci_low": -0.044444444444444446,
+        "ci_high": 0.011111111111111113,
+        "draws": 10000,
+        "seed": 20260922,
+        "point_by_family": {
+          "refund_with_credit": 0.0,
+          "partial_refund_restock_ticket": 0.041666666666666664,
+          "cancel_refund_release": -0.09166666666666666
+        }
+      },
+      "both_wordings_rate": {
+        "point": 0.005555555555555557,
+        "ci_low": -0.016666666666666666,
+        "ci_high": 0.02777777777777778,
+        "draws": 10000,
+        "seed": 20260923,
+        "point_by_family": {
+          "refund_with_credit": 0.0,
+          "partial_refund_restock_ticket": 0.05,
+          "cancel_refund_release": -0.03333333333333333
+        }
+      }
+    },
+    "C_mixed-G0": {
+      "mean_single_prompt_success": {
+        "point": 0.030555555555555555,
+        "ci_low": 0.011111111111111108,
+        "ci_high": 0.05277777777777778,
+        "draws": 10000,
+        "seed": 20260922,
+        "point_by_family": {
+          "refund_with_credit": 0.016666666666666666,
+          "partial_refund_restock_ticket": -0.008333333333333333,
+          "cancel_refund_release": 0.08333333333333333
+        }
+      },
+      "both_wordings_rate": {
+        "point": 0.011111111111111112,
+        "ci_low": 0.0,
+        "ci_high": 0.02777777777777778,
+        "draws": 10000,
+        "seed": 20260923,
+        "point_by_family": {
+          "refund_with_credit": 0.016666666666666666,
+          "partial_refund_restock_ticket": 0.016666666666666666,
+          "cancel_refund_release": 0.0
+        }
+      }
+    },
+    "C_blocked-G0": {
+      "mean_single_prompt_success": {
+        "point": 0.03888888888888889,
+        "ci_low": 0.011111111111111112,
+        "ci_high": 0.06944444444444443,
+        "draws": 10000,
+        "seed": 20260922,
+        "point_by_family": {
+          "refund_with_credit": 0.016666666666666666,
+          "partial_refund_restock_ticket": 0.11666666666666667,
+          "cancel_refund_release": -0.016666666666666666
+        }
+      },
+      "both_wordings_rate": {
+        "point": 0.03888888888888889,
+        "ci_low": 0.016666666666666666,
+        "ci_high": 0.06666666666666667,
+        "draws": 10000,
+        "seed": 20260923,
+        "point_by_family": {
+          "refund_with_credit": 0.016666666666666666,
+          "partial_refund_restock_ticket": 0.1,
+          "cancel_refund_release": 0.0
+        }
+      }
+    },
+    "C_mixed-C_blocked": {
+      "mean_single_prompt_success": {
+        "point": -0.008333333333333331,
+        "ci_low": -0.03888888888888888,
+        "ci_high": 0.019444444444444445,
+        "draws": 10000,
+        "seed": 20260922,
+        "point_by_family": {
+          "refund_with_credit": 0.0,
+          "partial_refund_restock_ticket": -0.125,
+          "cancel_refund_release": 0.1
+        }
+      },
+      "both_wordings_rate": {
+        "point": -0.027777777777777776,
+        "ci_low": -0.05555555555555555,
+        "ci_high": -0.005555555555555556,
+        "draws": 10000,
+        "seed": 20260923,
+        "point_by_family": {
+          "refund_with_credit": 0.0,
+          "partial_refund_restock_ticket": -0.08333333333333333,
+          "cancel_refund_release": 0.0
+        }
+      }
+    },
+    "U_mixed-G0": {
+      "mean_single_prompt_success": {
+        "point": 0.04722222222222222,
+        "ci_low": 0.01944444444444444,
+        "ci_high": 0.075,
+        "draws": 10000,
+        "seed": 20260922,
+        "point_by_family": {
+          "refund_with_credit": 0.016666666666666666,
+          "partial_refund_restock_ticket": -0.05,
+          "cancel_refund_release": 0.175
+        }
+      },
+      "both_wordings_rate": {
+        "point": 0.005555555555555556,
+        "ci_low": -0.016666666666666666,
+        "ci_high": 0.02777777777777778,
+        "draws": 10000,
+        "seed": 20260923,
+        "point_by_family": {
+          "refund_with_credit": 0.016666666666666666,
+          "partial_refund_restock_ticket": -0.03333333333333333,
+          "cancel_refund_release": 0.03333333333333333
+        }
+      }
+    }
+  },
+  "run_checks": {
+    "SFT": {
+      "analysis_sha256": "b0ba1ce04cbb1a5a2d9552433c97739f51631de36ca76ecc29b67ae05eb274a8",
+      "summary_sha256": "17c15159d6b84876c9d263137da0f5dcd5a49e65bbcc6b9d80b8a36c67f98bbd",
+      "run_sha256": "619979fa34a7617ca9ee88b86cedd61d79131e8fa4622bd7b20c5af1d5d3792a",
+      "filled": 360,
+      "quota": 360,
+      "incomplete": false,
+      "weight_sha256": "d72024f60a6a7f8f681be54d4ea3af4f22fa3b5d5f87ee2f26791310d0e877e8"
+    },
+    "G0": {
+      "analysis_sha256": "edebd112e466f675b10258545a3270cb29c663c4619edb747b6ff20a858f17c2",
+      "summary_sha256": "9e2c707f4ec42f3baaf731a5fd1e59a99d0d532512269478befec0ab0bbecc67",
+      "run_sha256": "bb31f3f66d6a8e58ae30544f3ff37f235ba29cd72adde5a642934fb6d46f3488",
+      "filled": 360,
+      "quota": 360,
+      "incomplete": false,
+      "weight_sha256": "1e8344a6de9b0295e87d21ed5d8b324c188b84cccd4df1cd3ed4a2d66e821c88"
+    },
+    "C_blocked": {
+      "analysis_sha256": "67be2a8303e0e0b55a820e72162fd5bc83602a63e7c9589a102347d236db597c",
+      "summary_sha256": "f1476acf9d597668a40dca05990812e19f2855ef6d8da0cc0b792cacea95600f",
+      "run_sha256": "1b61184a3a7c477b3e3bd259926199dbb2ffb26be7a47ffd29c0c6c42b80af5a",
+      "filled": 360,
+      "quota": 360,
+      "incomplete": false,
+      "weight_sha256": "1d465c94cdc19d479e69e85358e016ddb45a34bf353c5b4f82e3acde47a5ed15"
+    },
+    "C_mixed": {
+      "analysis_sha256": "0aba507b4c8f9b61726f0b909a4719eb938963a3064fafcdc2185ec68d604c97",
+      "summary_sha256": "87f4c628b31c9fca6461b4c4a60419df1a590a09437ec42e75c1b680d88a1147",
+      "run_sha256": "9c6f5c92950ffb9353f9b051d50dd5d57ceab39c4b0a379398e9efff8f217021",
+      "filled": 360,
+      "quota": 360,
+      "incomplete": false,
+      "weight_sha256": "912b0915a42146d5d12d063fb3f01fbd58342ecd6c9b2658a19c53c3aafa8629"
+    },
+    "U_mixed": {
+      "analysis_sha256": "6d04fc4428f5caa9f77e8028b393f4fe1b65b6237a307929bc2e0479b75f0355",
+      "summary_sha256": "49fbfa8ca1bf26220ec42ac4c79943452778106180dd2189f210f91e8e98bfc2",
+      "run_sha256": "51c1653f2f92e4509ce7ceec546e1ce361d5a96f1e4662c2beaf71a97db62963",
+      "filled": 360,
+      "quota": 360,
+      "incomplete": false,
+      "weight_sha256": "414896e2e2b782e85c2381c7e02ec782199778e8ab1ddcfdc47e00d941129b7e"
+    }
+  },
+  "scope": {
+    "families": [
+      "refund_with_credit",
+      "partial_refund_restock_ticket",
+      "cancel_refund_release"
+    ],
+    "worlds_per_family": 60,
+    "variants": [
+      "A",
+      "B"
+    ],
+    "bulk_refund_included": false,
+    "training_seed_uncertainty_measured": false
+  }
+}

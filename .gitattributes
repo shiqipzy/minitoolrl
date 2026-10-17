@@ -1,0 +1,5 @@
+* text=auto
+# Preserve the exact bytes recorded in the experiment source hashes.
+*.py -text
+*.md text eol=lf
+*.json text eol=lf

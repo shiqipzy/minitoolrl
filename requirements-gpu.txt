@@ -1,0 +1,24 @@
+# Production GPU-host dependencies for the DeepSpeed + vLLM pipeline.
+#
+#   cd <repo>            # must run from the project root: this file is editable
+#   python -m pip install -r requirements-gpu.txt
+#
+# RESOLVES TO THE gpu EXTRA, exactly like `python -m pip install -e ".[gpu]"`.
+# The version pins live in pyproject.toml only; this file does not repeat them,
+# so the two cannot drift apart.
+#
+# Do NOT mix this with requirements.txt / the cpu extra. They are alternatives,
+# not layers: the cpu extra pins torch==2.12.1 + transformers==4.57.6, while
+# vllm 0.31.0 requires torch==2.13.0 and transformers>=5.10.4,<5.18.0. One
+# environment cannot satisfy both.
+#
+# torch 2.13.0 must be the CUDA build matching the driver. On Linux the PyPI
+# wheel already bundles CUDA; if your driver needs a specific CUDA build,
+# install torch first from the matching wheel index (see
+# https://pytorch.org/get-started/locally/), then run this file — the pin is
+# already satisfied and pip will leave it alone.
+#
+# deepspeed only needs the CUDA runtime it finds inside torch; no separate CUDA
+# toolkit package is required for ZeRO-2.
+
+-e .[gpu]

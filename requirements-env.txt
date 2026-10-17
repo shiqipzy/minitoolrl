@@ -1,0 +1,4 @@
+# Environment self-check only (stdlib). Python >= 3.10.
+# No extra packages.
+#
+#   python -m minitoolrl.env.solver
