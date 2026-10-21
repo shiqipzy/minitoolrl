@@ -2,8 +2,6 @@
 
 DeepSpeedTrainer 是生产路径唯一的训练后端：ZeRO-2 分片优化器状态和梯度，
 模型参数每卡保留完整副本；bf16 计算、fp32 优化器主权重；不使用 offload。
-TorchReferenceTrainer 是纯 PyTorch 单进程参照，只用于 CPU 更新数学
-正确性测试。
 
 归一化约定：loss_fn(module, microbatch) 返回按全局口径归一化的损失张量
 （例如 CE_sum / n_total，n_total 为整个更新组的全局监督 token 数），使得
@@ -71,61 +69,6 @@ def merge_aux(into: Dict[str, float], extra: Dict[str, float]) -> None:
         into[key] = into.get(key, 0.0) + float(value)
 
 
-class TorchReferenceTrainer:
-    """纯 PyTorch 单进程参照后端：CPU 更新数学正确性测试使用。"""
-
-    backend_name = 'torch_reference'
-
-    def __init__(self, model, *, lr: float, weight_decay: float, grad_clip: float,
-                 device: str = 'cpu'):
-        self.model = model.to(torch.device(device))
-        self.device = torch.device(device)
-        self.grad_clip = float(grad_clip)
-        self.rank = 0
-        self.world_size = 1
-        self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=lr, weight_decay=weight_decay,
-            fused=self.device.type == 'cuda')
-
-    @property
-    def module(self):
-        return self.model
-
-    def set_lr(self, lr: float) -> None:
-        for group in self.optimizer.param_groups:
-            group['lr'] = lr
-
-    def update(self, global_batch: Sequence, loss_fn: LossFn) -> UpdateMetrics:
-        if not global_batch:
-            raise RuntimeError('empty update group')
-        started = time.monotonic()
-        self.optimizer.zero_grad(set_to_none=True)
-        loss_total = 0.0
-        aux: Dict[str, float] = {}
-        for mb in global_batch:
-            loss, extra = loss_fn(self.model, mb)
-            loss.backward()
-            loss_total += float(loss.detach())
-            merge_aux(aux, extra)
-        norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-        if not torch.isfinite(norm):
-            raise RuntimeError('non-finite gradient')
-        self.optimizer.step()
-        self.optimizer.zero_grad(set_to_none=True)
-        return UpdateMetrics(loss=loss_total, grad_norm=float(norm),
-                             seconds=time.monotonic() - started,
-                             n_microbatches=len(global_batch), applied_updates=1,
-                             aux=aux)
-
-    def export_model(self, destination, tokenizer=None) -> None:
-        dest = Path(destination)
-        state = {k: v.detach().to(device='cpu', dtype=torch.bfloat16)
-                 for k, v in self.model.state_dict().items()}
-        self.model.save_pretrained(dest, state_dict=state, safe_serialization=True)
-        if tokenizer is not None:
-            tokenizer.save_pretrained(dest)
-
-
 class DeepSpeedTrainer:
     """DeepSpeed ZeRO-2 后端：单卡或多卡同一种更新语义。
 
@@ -168,15 +111,10 @@ class DeepSpeedTrainer:
         }
         self.engine, _, _, _ = deepspeed.initialize(
             model=model, optimizer=optimizer, config=config)
-        self.grad_clip = float(grad_clip)
 
     @property
     def module(self):
         return self.engine.module
-
-    @property
-    def world_size(self) -> int:
-        return self.world
 
     @property
     def micro_steps(self) -> int:
@@ -192,7 +130,7 @@ class DeepSpeedTrainer:
         for group in self.engine.optimizer.param_groups:
             group['lr'] = lr
 
-    def update(self, global_batch: Sequence, loss_fn: LossFn, *, before_step=None) -> UpdateMetrics:
+    def update(self, global_batch: Sequence, loss_fn: LossFn) -> UpdateMetrics:
         if not global_batch:
             raise RuntimeError('empty update group')
         mine = local_slice(global_batch, self.rank, self.world)
@@ -219,9 +157,6 @@ class DeepSpeedTrainer:
             else:
                 # 零损失只对齐累积边界；不产生梯度，不复制真实样本。
                 self.engine.backward(self.zero_loss(self.engine.module) * 0.0)
-            # 工程核对在裁剪和优化器更新之前读取完整梯度；生产调用不收集副本。
-            if before_step is not None and index == self.gas_local - 1:
-                before_step(self.module)
             self.engine.step()
             applied += int(self.engine.was_step_applied())
         norm = self.engine.get_global_grad_norm()

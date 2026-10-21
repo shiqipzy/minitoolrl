@@ -42,7 +42,6 @@ def rollout_pool(sampler, tokenizer, insts, budget, *, temperature: float,
         s = MultiTurnSequence(tokenizer)
         s.set_prompt(ep.messages, ep.tools)
         s.sampler_logprobs = [] if logprobs else None   # 与策略 token 对齐的采样概率
-        s.policy_version = None
         seqs.append(s)
 
     n_gen_tokens = 0
@@ -79,12 +78,6 @@ def rollout_pool(sampler, tokenizer, insts, budget, *, temperature: float,
             gen_ids = list(gen.token_ids)
             if policy_version is None:
                 policy_version = gen.policy_version
-            elif policy_version != gen.policy_version:
-                raise RuntimeError('sampler policy version changed within the rollout group')
-            if seqs[i].policy_version is None:
-                seqs[i].policy_version = gen.policy_version
-            elif seqs[i].policy_version != gen.policy_version:
-                raise RuntimeError('sampler policy version changed mid-episode')
             n_gen_tokens += len(gen_ids)
             closed = bool(gen_ids) and gen_ids[-1] == tokenizer.eos_token_id
             seqs[i].append_generated(gen_ids)

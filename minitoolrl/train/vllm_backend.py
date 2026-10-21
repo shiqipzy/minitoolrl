@@ -17,8 +17,10 @@
    policy_version 与本地版本一致。
 
 同步过程不落盘 checkpoint，也不保存参数副本文件。vllm 与 pyzmq 均懒加载，
-本模块在未安装它们的机器上仍可导入（用于协议与序列化测试）。
+仅在创建采样器或启动服务时加载这些依赖。
 """
+
+# 一个是训练的卡，一个是采样的卡，训练的卡把采样的任务外包给采样的卡。此外要注意rollout是批量生成，要想数据的形状。
 from __future__ import annotations
 
 import argparse
@@ -247,45 +249,43 @@ class VLLMRollout:
 
     def __init__(self, model_path: str, *, gpu: str, host: str = '127.0.0.1',
                  max_model_len: int = 4096, gpu_memory_utilization: float = 0.85,
-                 startup_timeout: float = 900.0, request_timeout: float = 600.0,
-                 transport=None, process=None):
+                 startup_timeout: float = 900.0, request_timeout: float = 600.0):
         self.host = host
         self.port = _free_port()
         self.nccl_port = _free_port()
         self.version = 0
         self._engine = None
         self._closed = False
-        self.process = process
-        self.transport = transport
-        if transport is None:
-            env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), PYTHONUNBUFFERED='1')
-            for key in ('RANK', 'WORLD_SIZE', 'LOCAL_RANK', 'LOCAL_WORLD_SIZE', 'MASTER_ADDR', 'MASTER_PORT'):
-                env.pop(key, None)
-            argv = [sys.executable, '-u', '-m', 'minitoolrl.train.vllm_backend',
-                    '--serve', '--model', model_path, '--host', host,
-                    '--port', str(self.port),
-                    '--max-model-len', str(max_model_len),
-                    '--gpu-memory-utilization', str(gpu_memory_utilization)]
-            self.process = subprocess.Popen(argv, env=env)
-            deadline = time.monotonic() + startup_timeout
-            try:
-                self.transport = _ZMQTransport(host, self.port, request_timeout)
-                while True:
-                    if self.process.poll() is not None:
-                        raise RuntimeError('vLLM sampler exited during startup with code %s'
-                                           % self.process.returncode)
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise RuntimeError('vLLM sampler did not become ready')
-                    try:
-                        reply = self.transport.call({'op': 'health'}, timeout_seconds=min(2., remaining))
-                        if reply.get('ok'):
-                            break
-                    except RuntimeError:
-                        continue
-            except BaseException:
-                self.close(graceful=False)
-                raise
+        self.process = None
+        self.transport = None
+        env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), PYTHONUNBUFFERED='1')
+        for key in ('RANK', 'WORLD_SIZE', 'LOCAL_RANK', 'LOCAL_WORLD_SIZE', 'MASTER_ADDR', 'MASTER_PORT'):
+            env.pop(key, None)
+        argv = [sys.executable, '-u', '-m', 'minitoolrl.train.vllm_backend',
+                '--serve', '--model', model_path, '--host', host,
+                '--port', str(self.port),
+                '--max-model-len', str(max_model_len),
+                '--gpu-memory-utilization', str(gpu_memory_utilization)]
+        self.process = subprocess.Popen(argv, env=env)
+        deadline = time.monotonic() + startup_timeout
+        try:
+            self.transport = _ZMQTransport(host, self.port, request_timeout)
+            while True:
+                if self.process.poll() is not None:
+                    raise RuntimeError('vLLM sampler exited during startup with code %s'
+                                       % self.process.returncode)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError('vLLM sampler did not become ready')
+                try:
+                    reply = self.transport.call({'op': 'health'}, timeout_seconds=min(2., remaining))
+                    if reply.get('ok'):
+                        break
+                except RuntimeError:
+                    continue
+        except BaseException:
+            self.close(graceful=False)
+            raise
 
     # ------------------------------------------------------------- 采样
     def generate(self, requests: Sequence[GenRequest], *, logprobs: bool = True

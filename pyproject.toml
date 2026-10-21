@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# CPU/dev host: input verification, CPU unit tests and packing.
+# CPU host: input verification and packing.
 cpu = [
   "torch==2.12.1",
   "transformers==4.57.6",
