@@ -2,8 +2,6 @@
 
 DeepSpeedTrainer 是生产路径唯一的训练后端：ZeRO-2 分片优化器状态和梯度，
 模型参数每卡保留完整副本；bf16 计算、fp32 优化器主权重；不使用 offload。
-TorchReferenceTrainer 是纯 PyTorch 单进程参照，只用于 CPU 更新数学
-正确性测试。
 
 归一化约定：loss_fn(module, microbatch) 返回按全局口径归一化的损失张量
 （例如 CE_sum / n_total，n_total 为整个更新组的全局监督 token 数），使得
@@ -25,8 +23,10 @@ U 组 9 个 microbatch 无法均分双卡的情形）。用 was_step_applied 核
 """
 from __future__ import annotations
 
+import datetime
 import math
 import os
+import platform
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -71,59 +71,26 @@ def merge_aux(into: Dict[str, float], extra: Dict[str, float]) -> None:
         into[key] = into.get(key, 0.0) + float(value)
 
 
-class TorchReferenceTrainer:
-    """纯 PyTorch 单进程参照后端：CPU 更新数学正确性测试使用。"""
-
-    backend_name = 'torch_reference'
-
-    def __init__(self, model, *, lr: float, weight_decay: float, grad_clip: float,
-                 device: str = 'cpu'):
-        self.model = model.to(torch.device(device))
-        self.device = torch.device(device)
-        self.grad_clip = float(grad_clip)
-        self.rank = 0
-        self.world_size = 1
-        self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=lr, weight_decay=weight_decay,
-            fused=self.device.type == 'cuda')
-
-    @property
-    def module(self):
-        return self.model
-
-    def set_lr(self, lr: float) -> None:
-        for group in self.optimizer.param_groups:
-            group['lr'] = lr
-
-    def update(self, global_batch: Sequence, loss_fn: LossFn) -> UpdateMetrics:
-        if not global_batch:
-            raise RuntimeError('empty update group')
-        started = time.monotonic()
-        self.optimizer.zero_grad(set_to_none=True)
-        loss_total = 0.0
-        aux: Dict[str, float] = {}
-        for mb in global_batch:
-            loss, extra = loss_fn(self.model, mb)
-            loss.backward()
-            loss_total += float(loss.detach())
-            merge_aux(aux, extra)
-        norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
-        if not torch.isfinite(norm):
-            raise RuntimeError('non-finite gradient')
-        self.optimizer.step()
-        self.optimizer.zero_grad(set_to_none=True)
-        return UpdateMetrics(loss=loss_total, grad_norm=float(norm),
-                             seconds=time.monotonic() - started,
-                             n_microbatches=len(global_batch), applied_updates=1,
-                             aux=aux)
-
-    def export_model(self, destination, tokenizer=None) -> None:
-        dest = Path(destination)
-        state = {k: v.detach().to(device='cpu', dtype=torch.bfloat16)
-                 for k, v in self.model.state_dict().items()}
-        self.model.save_pretrained(dest, state_dict=state, safe_serialization=True)
-        if tokenizer is not None:
-            tokenizer.save_pretrained(dest)
+def init_process_group(device: str = 'cuda') -> torch.device:
+    """DeepSpeed 统一建立训练进程组；训练脚本不再另建一套初始化入口。"""
+    import deepspeed
+    if device == 'cuda':
+        if not torch.cuda.is_available():
+            raise RuntimeError('CUDA is not available')
+        local_rank = int(os.environ.get('LOCAL_RANK', '0'))
+        selected = torch.device('cuda', local_rank)
+        torch.cuda.set_device(selected)
+    elif device == 'cpu':
+        selected = torch.device('cpu')
+    else:
+        raise ValueError('device must be cuda or cpu, got ' + repr(device))
+    if not torch.distributed.is_initialized():
+        if platform.system() == 'Windows':
+            os.environ.setdefault('USE_LIBUV', '0')
+        deepspeed.init_distributed(
+            dist_backend='nccl' if selected.type == 'cuda' else 'gloo',
+            timeout=datetime.timedelta(hours=2))
+    return selected
 
 
 class DeepSpeedTrainer:
@@ -140,20 +107,15 @@ class DeepSpeedTrainer:
         import deepspeed  # 懒加载：无机/无 deepspeed 环境下模块仍可导入。
         if int(gas_global) <= 0:
             raise ValueError('gas_global must be positive')
-        self.device = torch.device(device)
+        self.device = init_process_group(device)
         self.gas_global = int(gas_global)
         self.zero_loss = zero_loss
-        if not torch.distributed.is_initialized():
-            deepspeed.init_distributed(
-                dist_backend='nccl' if self.device.type == 'cuda' else 'gloo')
         self.world = torch.distributed.get_world_size()
         self.rank = torch.distributed.get_rank()
         self.gas_local = local_gas(self.gas_global, self.world)
         self.scale = ds_loss_scale(self.gas_global, self.world)
         if self.device.type == 'cuda':
-            local_rank = int(os.environ.get('LOCAL_RANK', '0'))
-            torch.cuda.set_device(torch.device('cuda', local_rank))
-            model = model.to(torch.device('cuda', local_rank))
+            model = model.to(self.device)
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr,
                                       weight_decay=weight_decay,
                                       fused=self.device.type == 'cuda')
@@ -168,15 +130,10 @@ class DeepSpeedTrainer:
         }
         self.engine, _, _, _ = deepspeed.initialize(
             model=model, optimizer=optimizer, config=config)
-        self.grad_clip = float(grad_clip)
 
     @property
     def module(self):
         return self.engine.module
-
-    @property
-    def world_size(self) -> int:
-        return self.world
 
     @property
     def micro_steps(self) -> int:
@@ -192,14 +149,10 @@ class DeepSpeedTrainer:
         for group in self.engine.optimizer.param_groups:
             group['lr'] = lr
 
-    def update(self, global_batch: Sequence, loss_fn: LossFn, *, before_step=None) -> UpdateMetrics:
+    def update(self, global_batch: Sequence, loss_fn: LossFn) -> UpdateMetrics:
         if not global_batch:
             raise RuntimeError('empty update group')
-        mine = local_slice(global_batch, self.rank, self.world)
-        if len(mine) > self.gas_local:
-            raise RuntimeError(
-                'rank %d received %d microbatches > gas_local %d; '
-                'gas_global/world mismatch' % (self.rank, len(mine), self.gas_local))
+        local_microbatches = local_slice(global_batch, self.rank, self.world)
         started = time.monotonic()
         loss_local = 0.0
         aux: Dict[str, float] = {}
@@ -211,17 +164,14 @@ class DeepSpeedTrainer:
         # backward() 不推进 micro-step，step() 才推进；二者必须交替，且本组恰好
         # gas_local 次，边界才落在最后一次，一次全局更新只更新一次参数。
         for index in range(self.gas_local):
-            if index < len(mine):
-                loss, extra = loss_fn(self.engine.module, mine[index])
+            if index < len(local_microbatches):
+                loss, extra = loss_fn(self.engine.module, local_microbatches[index])
                 self.engine.backward(loss * self.scale)
                 loss_local += float(loss.detach())
                 merge_aux(aux, extra)
             else:
                 # 零损失只对齐累积边界；不产生梯度，不复制真实样本。
-                self.engine.backward(self.zero_loss(self.engine.module) * 0.0)
-            # 工程核对在裁剪和优化器更新之前读取完整梯度；生产调用不收集副本。
-            if before_step is not None and index == self.gas_local - 1:
-                before_step(self.module)
+                self.engine.backward(self.zero_loss(self.engine.module))
             self.engine.step()
             applied += int(self.engine.was_step_applied())
         norm = self.engine.get_global_grad_norm()

@@ -1,4 +1,4 @@
-# CPU/dev host: input verification, CPU unit tests and packing.
+# CPU host: input verification and packing.
 #
 #   python -m pip install -r requirements.txt
 #

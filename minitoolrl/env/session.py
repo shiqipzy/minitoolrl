@@ -2,7 +2,7 @@
 
 Episode.step 处理一轮 assistant 文本，更新世界状态和消息记录。
 Episode.result 按任务要求核对最终状态；transcript 整理评测分析和续跑需要的记录。
-模型生成与上下文长度检查由 train/rollout_align.py 驱动。
+模型生成与上下文长度检查由 train/rollout.py 驱动。
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def parse_tool_calls(text: str) -> Tuple[List[Dict[str, Any]], List[str]]:
         raw = raw.strip()
         try:
             obj = json.loads(raw)
-        except Exception as e:
+        except json.JSONDecodeError as e:
             errors.append(f"bad_json:{type(e).__name__}")
             continue
         if not isinstance(obj, dict) or "name" not in obj:
@@ -40,7 +40,7 @@ def parse_tool_calls(text: str) -> Tuple[List[Dict[str, Any]], List[str]]:
         if isinstance(args, str):
             try:
                 args = json.loads(args)
-            except Exception:
+            except json.JSONDecodeError:
                 errors.append("bad_arguments_json")
                 continue
         if not isinstance(args, dict):

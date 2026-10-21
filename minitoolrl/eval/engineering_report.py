@@ -11,28 +11,65 @@ import json
 import math
 from pathlib import Path
 
-from minitoolrl.eval.report_utils import load_json, load_rows, loss_delta, training_rows
+from minitoolrl import files
 
 GRPO_DEPLOYMENTS = ('vllm_separated',)
-SFT_MATCH_KEYS = ('warm_start_sha', 'train_sha256', 'val_sha256', 'chat_template_sha256', 'seed',
+SFT_MATCH_KEYS = ('initial_model_sha256', 'train_data_sha256', 'validation_data_sha256',
+                  'chat_template_sha256', 'seed',
                   'batch_size', 'grad_accum', 'epochs', 'lr', 'weight_decay', 'grad_clip',
                   'max_length', 'max_updates', 'probe', 'update_plan_sha256')
 GRPO_MATCH_KEYS = ('init_weights', 'chat_template_sha256', 'train_pool_sha256', 'max_iterations',
                    'rl', 'episode_budget', 'student_samples')
 
 
+def load_rows(path: Path):
+    return files.read_jsonl(path) if Path(path).exists() else []
+
+
+def training_rows(path: Path) -> dict:
+    """逐步更新记录按 step 建索引；重复 step 说明日志被写坏。"""
+    result = {}
+    for row in load_rows(path):
+        if 'step' not in row:
+            continue
+        step = int(row['step'])
+        if step in result:
+            raise ValueError('duplicate update in ' + str(path))
+        result[step] = row
+    return result
+
+
+def loss_delta(rows_a: dict, rows_b: dict):
+    """同一更新前缀上的 loss 与梯度差；用于核对单/双 rank 是否走了同一次更新。"""
+    common = sorted(set(rows_a) & set(rows_b))
+    if not common:
+        return None
+    abs_d = [abs(float(rows_a[s]['loss']) - float(rows_b[s]['loss'])) for s in common]
+    rel_d = [d / max(1e-9, abs(float(rows_a[s]['loss']))) for s, d in zip(common, abs_d)]
+    norm_d = [abs(float(rows_a[s].get('grad_norm', 0.0)) - float(rows_b[s].get('grad_norm', 0.0)))
+              for s in common]
+    return dict(steps_compared=len(common), first_step=common[0], last_step=common[-1],
+                loss_abs_delta_max=round(max(abs_d), 6),
+                loss_abs_delta_mean=round(sum(abs_d) / len(abs_d), 6),
+                loss_rel_delta_max=round(max(rel_d), 6),
+                grad_norm_abs_delta_max=round(max(norm_d), 6))
+
+
 def _collect_sft(run, spec, sizes, discard, result):
     configs, logs = {}, {}
     for n in sizes:
         folder = run / 'engineering/sft' / ('n%d' % n)
-        configs[n] = load_json(folder / 'config.json') or {}
+        configs[n] = files.load_json(folder / 'config.json') or {}
         logs[n] = training_rows(folder / 'updates.jsonl')
         expected = spec['sft_updates']
-        summary = load_json(folder / 'summary.json') or {}
-        throughput = load_json(folder / 'throughput.json') or {}
+        summary = files.load_json(folder / 'summary.json') or {}
         complete = summary.get('steps') == expected and sorted(logs[n]) == list(range(1, expected + 1))
         if (not all(k in configs[n] for k in SFT_MATCH_KEYS)
-                or (configs[n].get('trainer_backend') or {}).get('backend') != 'deepspeed_zero2'
+                or summary.get('probe') is not True
+                or summary.get('stop_reason') != 'max_updates'
+                or summary.get('optimizer_updates') != expected
+                or len(summary.get('peak_gb_per_rank', [])) != n
+                or configs[n].get('backend') != 'deepspeed_zero2'
                 or any(not math.isfinite(float(r.get(k, float('nan'))))
                        for r in logs[n].values() for k in ('loss', 'grad_norm', 'lr', 'update_seconds'))
                 or any(r.get('update_seconds', 0) <= 0 for r in logs[n].values())):
@@ -44,13 +81,13 @@ def _collect_sft(run, spec, sizes, discard, result):
         if seconds <= 0:
             result['issues'].append('missing SFT measured time n%d' % n)
         result['sft'].append(dict(world_size=n, complete=complete, updates=summary.get('steps'),
-            backend=(configs[n].get('trainer_backend') or {}).get('backend'),
+            backend=configs[n].get('backend'),
             measured_updates=len(rows), measured_seconds=round(seconds, 3),
             gpu_seconds=round(seconds * n, 3), gpu_count=n,
             updates_per_second=len(rows) / seconds if seconds > 0 else None,
             supervised_tokens_per_second=sum(r['n_supervised'] for r in rows) / seconds if seconds > 0 else None,
             input_tokens_per_second=sum(r['n_input'] for r in rows) / seconds if seconds > 0 else None,
-            peak_gb_per_rank=throughput.get('peak_gb_per_rank')))
+            peak_gb_per_rank=summary.get('peak_gb_per_rank')))
     if not sizes:
         return
     base = sizes[0]
@@ -71,17 +108,17 @@ def _collect_grpo(run, spec, discard, result):
     configs = {}
     for name in GRPO_DEPLOYMENTS:
         folder = run / 'engineering/grpo' / name
-        configs[name] = load_json(folder / 'protocol.json') or {}
-        stats = load_json(folder / 'scaling_grpo.json') or {}
+        configs[name] = files.load_json(folder / 'protocol.json') or {}
+        stats = files.load_json(folder / 'grpo_cost.json') or {}
         rows = load_rows(folder / 'grpo_train.jsonl')
         wanted = spec['grpo_iterations']
         valid = (stats.get('iterations') == wanted and
                  [r.get('iteration') for r in rows] == list(range(1, wanted + 1)) and
-                 stats.get('episodes_total') == wanted * 8)
+                 sum(len(group['rewards']) for row in rows for group in row['groups']) == wanted * 8)
         expected_sampler = 'vllm'
         expected_gpus = 2
         if (not all(k in configs[name] for k in GRPO_MATCH_KEYS)
-                or stats.get('sampler') != expected_sampler or stats.get('gpus_in_use') != expected_gpus
+                or configs[name].get('sampler') != expected_sampler or stats.get('gpus_in_use') != expected_gpus
                 or any(not math.isfinite(float(r.get('iteration_seconds', float('nan'))))
                        or r.get('iteration_seconds', 0) <= 0 for r in rows)):
             valid = False
@@ -89,14 +126,12 @@ def _collect_grpo(run, spec, discard, result):
             result['issues'].append('incomplete GRPO probe %s' % name)
         measured = rows[discard:]
         seconds = sum(r.get('iteration_seconds', 0) for r in measured)
-        tokens = ((rows[-1]['costs']['generated_tokens'] -
-                   (rows[discard - 1]['costs']['generated_tokens'] if discard else 0))
-                  if len(rows) > discard else 0)
+        tokens = sum(row['generated_tokens'] for row in measured)
         if seconds <= 0:
             result['issues'].append('missing GRPO measured time %s' % name)
         gpus = 2
         result['grpo'].append(dict(
-            deployment=name, sampler=stats.get('sampler'), complete=valid,
+            deployment=name, sampler=configs[name].get('sampler'), complete=valid,
             iterations=stats.get('iterations'), measured_iterations=len(measured),
             measured_seconds=round(seconds, 3), gpu_count=gpus,
             gpu_seconds=round(seconds * gpus, 3),
@@ -104,12 +139,12 @@ def _collect_grpo(run, spec, discard, result):
             episodes_per_hour=len(measured) * 8 / seconds * 3600 if seconds > 0 else None,
             generated_tokens_per_second=tokens / seconds if seconds > 0 else None,
             updates=stats.get('updates'), zero_signal_iterations=stats.get('zero_signal_iterations'),
-            peak_gb_per_rank=stats.get('peak_gb_training')))
+            peak_gb_per_rank=stats.get('peak_memory_gb')))
 
 
 def collect(run):
     run = Path(run)
-    protocol = load_json(run / 'protocol.json') or {}
+    protocol = files.load_json(run / 'protocol.json') or {}
     spec = protocol.get('engineering', {})
     sizes = spec.get('world_sizes', [])
     discard = spec.get('exclude_first', 2)

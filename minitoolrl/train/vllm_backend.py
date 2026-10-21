@@ -2,7 +2,7 @@
 
 三种使用方式：
 
-- LocalVLLM：评测与同卡基准使用的进程内采样器。
+- LocalVLLM：评测与开发集检查使用的进程内采样器。
 - VLLMRollout：GRPO 训推分离的客户端。采样进程常驻独立显卡，训练进程通过
   命令通道（ZMQ）请求生成；权重同步使用 vLLM 官方跨 GPU NCCL 权重传输
   （vllm.distributed.weight_transfer，backend="nccl"）。
@@ -17,14 +17,16 @@
    policy_version 与本地版本一致。
 
 同步过程不落盘 checkpoint，也不保存参数副本文件。vllm 与 pyzmq 均懒加载，
-本模块在未安装它们的机器上仍可导入（用于协议与序列化测试）。
+仅在创建采样器或启动服务时加载这些依赖。
 """
+
+# 一个是训练的卡，一个是采样的卡，训练的卡把采样的任务外包给采样的卡。此外要注意rollout是批量生成，要想数据的形状。
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -52,7 +54,6 @@ class Generation:
     """一条生成结果：只保留当前消费者实际使用的字段。"""
     request_id: Any
     token_ids: List[int]
-    token_logprobs: Optional[List[float]]
     finish_reason: str
     policy_version: int
 
@@ -78,11 +79,9 @@ def generation_to_dict(gen: Generation) -> dict:
 
 
 def generation_from_dict(row: dict) -> Generation:
-    logprobs = row.get('token_logprobs')
     return Generation(
         request_id=row['request_id'],
         token_ids=[int(t) for t in row['token_ids']],
-        token_logprobs=None if logprobs is None else [float(x) for x in logprobs],
         finish_reason=str(row['finish_reason']),
         policy_version=int(row['policy_version']),
     )
@@ -106,23 +105,6 @@ def _free_port() -> int:
 # ------------------------------------------------------------------ vLLM 结果提取
 
 
-def _sampled_logprobs(token_ids: Sequence[int], logprobs_per_token) -> Optional[List[float]]:
-    """vLLM 每个位置返回 {token_id: Logprob}；取出实际采样 token 的对数概率。"""
-    if logprobs_per_token is None:
-        return None
-    if len(token_ids) != len(logprobs_per_token):
-        raise RuntimeError('sampler logprob count differs from generated tokens')
-    out = []
-    for tid, entry in zip(token_ids, logprobs_per_token):
-        if entry is None or tid not in entry:
-            return None
-        value = float(entry[tid].logprob)
-        if not math.isfinite(value):
-            raise RuntimeError('sampler returned a non-finite logprob')
-        out.append(value)
-    return out
-
-
 def outputs_to_generations(requests: Sequence[GenRequest], outputs,
                            policy_version: int) -> List[Generation]:
     generations = []
@@ -134,26 +116,24 @@ def outputs_to_generations(requests: Sequence[GenRequest], outputs,
         generations.append(Generation(
             request_id=req.request_id,
             token_ids=token_ids,
-            token_logprobs=_sampled_logprobs(token_ids, completion.logprobs),
             finish_reason=str(completion.finish_reason),
             policy_version=policy_version,
         ))
     return generations
 
 
-def _sampling_params(req: GenRequest, logprobs: bool):
+def _sampling_params(req: GenRequest):
     from vllm import SamplingParams  # 懒加载
     return SamplingParams(
         temperature=req.temperature, top_p=req.top_p, top_k=req.top_k,
-        max_tokens=req.max_new_tokens, seed=req.seed, detokenize=False,
-        logprobs=1 if logprobs else None)
+        max_tokens=req.max_new_tokens, seed=req.seed, detokenize=False)
 
 
 # ------------------------------------------------------------------ 进程内采样器
 
 
 class LocalVLLM:
-    """评测与同卡基准使用的进程内 vLLM 采样器（不含权重同步）。"""
+    """评测与开发集检查使用的进程内 vLLM 采样器（不含权重同步）。"""
 
     def __init__(self, model_path: str, *, max_model_len: int = 4096,
                  gpu_memory_utilization: float = 0.85, dtype: str = 'bfloat16'):
@@ -163,11 +143,10 @@ class LocalVLLM:
                        enforce_eager=False)
         self.version = 0
 
-    def generate(self, requests: Sequence[GenRequest], *, logprobs: bool = False
-                 ) -> List[Generation]:
+    def generate(self, requests: Sequence[GenRequest]) -> List[Generation]:
         from vllm import TokensPrompt  # 懒加载
         prompts = [TokensPrompt(prompt_token_ids=list(r.prompt_token_ids)) for r in requests]
-        params = [_sampling_params(r, logprobs) for r in requests]
+        params = [_sampling_params(r) for r in requests]
         outputs = self.llm.generate(prompts, params)
         return outputs_to_generations(requests, outputs, self.version)
 
@@ -196,20 +175,14 @@ class _ZMQTransport:
     def call(self, message: dict, *, timeout_seconds=None) -> dict:
         # vLLM 的 NCCL 握手在工作线程调用 RPC。Context 可跨线程共享，REQ socket
         # 必须在调用线程创建；每次请求关闭后也不会留下超时后的 REQ 等待状态。
-        socket = self.context.socket(self._zmq.REQ)
         timeout = self.timeout_ms if timeout_seconds is None else max(1, int(timeout_seconds * 1000))
-        socket.setsockopt(self._zmq.RCVTIMEO, timeout)
-        socket.setsockopt(self._zmq.SNDTIMEO, timeout)
-        socket.setsockopt(self._zmq.LINGER, 0)
-        socket.connect(self.endpoint)
-        try:
+        with self.context.socket(self._zmq.REQ) as socket:
+            socket.setsockopt(self._zmq.RCVTIMEO, timeout)
+            socket.setsockopt(self._zmq.SNDTIMEO, timeout)
+            socket.setsockopt(self._zmq.LINGER, 0)
+            socket.connect(self.endpoint)
             socket.send_string(json.dumps(message))
             reply = json.loads(socket.recv_string())
-        except self._zmq.Again as exc:
-            raise RuntimeError('vLLM sampler did not answer in time: '
-                               + str(message.get('op'))) from exc
-        finally:
-            socket.close(0)
         if reply.get('error'):
             raise RuntimeError('vLLM sampler error on %s: %s'
                                % (message.get('op'), reply['error']))
@@ -241,58 +214,53 @@ class _WeightSyncClient:
 class VLLMRollout:
     """GRPO 训推分离：训练进程一侧的采样与权重同步接口。
 
-    采样进程常驻另一张显卡；generate 只接受 token IDs，返回生成 token、概率和
+    采样进程常驻另一张显卡；generate 只接受 token IDs，返回生成 token 和
     结束原因；业务与工具执行仍在训练进程的 Episode 中完成。
     """
 
     def __init__(self, model_path: str, *, gpu: str, host: str = '127.0.0.1',
                  max_model_len: int = 4096, gpu_memory_utilization: float = 0.85,
-                 startup_timeout: float = 900.0, request_timeout: float = 600.0,
-                 transport=None, process=None):
+                 startup_timeout: float = 900.0, request_timeout: float = 600.0):
+        import zmq
         self.host = host
         self.port = _free_port()
         self.nccl_port = _free_port()
         self.version = 0
         self._engine = None
-        self._closed = False
-        self.process = process
-        self.transport = transport
-        if transport is None:
-            env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), PYTHONUNBUFFERED='1')
-            for key in ('RANK', 'WORLD_SIZE', 'LOCAL_RANK', 'LOCAL_WORLD_SIZE', 'MASTER_ADDR', 'MASTER_PORT'):
-                env.pop(key, None)
-            argv = [sys.executable, '-u', '-m', 'minitoolrl.train.vllm_backend',
-                    '--serve', '--model', model_path, '--host', host,
-                    '--port', str(self.port),
-                    '--max-model-len', str(max_model_len),
-                    '--gpu-memory-utilization', str(gpu_memory_utilization)]
+        self.process = None
+        env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu), PYTHONUNBUFFERED='1')
+        for key in ('RANK', 'WORLD_SIZE', 'LOCAL_RANK', 'LOCAL_WORLD_SIZE', 'MASTER_ADDR', 'MASTER_PORT'):
+            env.pop(key, None)
+        argv = [sys.executable, '-u', '-m', 'minitoolrl.train.vllm_backend',
+                '--serve', '--model', model_path, '--host', host,
+                '--port', str(self.port),
+                '--max-model-len', str(max_model_len),
+                '--gpu-memory-utilization', str(gpu_memory_utilization)]
+        self.transport = _ZMQTransport(host, self.port, request_timeout)
+        deadline = time.monotonic() + startup_timeout
+        try:
             self.process = subprocess.Popen(argv, env=env)
-            deadline = time.monotonic() + startup_timeout
-            try:
-                self.transport = _ZMQTransport(host, self.port, request_timeout)
-                while True:
-                    if self.process.poll() is not None:
-                        raise RuntimeError('vLLM sampler exited during startup with code %s'
-                                           % self.process.returncode)
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise RuntimeError('vLLM sampler did not become ready')
-                    try:
-                        reply = self.transport.call({'op': 'health'}, timeout_seconds=min(2., remaining))
-                        if reply.get('ok'):
-                            break
-                    except RuntimeError:
-                        continue
-            except BaseException:
-                self.close(graceful=False)
-                raise
+            while True:
+                if self.process.poll() is not None:
+                    raise RuntimeError('vLLM sampler exited during startup with code %s'
+                                       % self.process.returncode)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError('vLLM sampler did not become ready')
+                try:
+                    reply = self.transport.call({'op': 'health'}, timeout_seconds=min(2., remaining))
+                    if reply.get('ok'):
+                        break
+                except zmq.Again:  # 模型加载期间命令通道尚未就绪。
+                    continue
+        except BaseException:
+            self.close()
+            raise
 
     # ------------------------------------------------------------- 采样
-    def generate(self, requests: Sequence[GenRequest], *, logprobs: bool = True
-                 ) -> List[Generation]:
+    def generate(self, requests: Sequence[GenRequest]) -> List[Generation]:
         reply = self.transport.call({
             'op': 'generate',
-            'logprobs': bool(logprobs),
             'requests': [request_to_dict(r) for r in requests],
         })
         generations = [generation_from_dict(row) for row in reply['generations']]
@@ -305,13 +273,6 @@ class VLLMRollout:
         if version != self.version + 1:
             raise RuntimeError('weight version must increase: %s <= %s'
                                % (version, self.version))
-        try:
-            self._sync_weights(model, version)
-        except BaseException:
-            self.close(graceful=False)
-            raise
-
-    def _sync_weights(self, model, version):
         if self._engine is None:
             from vllm.distributed.weight_transfer import (  # 懒加载
                 ModuleSource, WeightTransferTrainerFactory)
@@ -331,25 +292,16 @@ class VLLMRollout:
         self.version = int(version)
 
     # ------------------------------------------------------------- 结束
-    def close(self, *, graceful=True) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        try:
-            if graceful and self.transport is not None:
-                self.transport.call({'op': 'shutdown'}, timeout_seconds=5.)
-        except Exception:
-            pass
-        try:
-            self.transport.close()
-        except Exception:
-            pass
+    def close(self) -> None:
+        """训练循环的 finally 统一结束采样进程并关闭通信通道。"""
         if self.process is not None:
+            self.process.terminate()
             try:
-                self.process.wait(timeout=5 if graceful else 0)
-            except Exception:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait(timeout=5)
+        self.transport.close()
 
 
 # ------------------------------------------------------------------ 采样子进程
@@ -357,6 +309,8 @@ class VLLMRollout:
 
 def _serve(args) -> None:
     """常驻采样进程：持有 LLM，顺序执行命令通道上的请求。"""
+    # 训练端 terminate() 发出 SIGTERM，让采样进程执行 Python 退出清理。
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     import zmq  # 懒加载
     from vllm import LLM, TokensPrompt  # 懒加载
     from vllm.config import WeightTransferConfig  # 懒加载
@@ -379,7 +333,7 @@ def _serve(args) -> None:
             requests = [request_from_dict(r) for r in message['requests']]
             prompts = [TokensPrompt(prompt_token_ids=list(r.prompt_token_ids))
                        for r in requests]
-            params = [_sampling_params(r, bool(message.get('logprobs'))) for r in requests]
+            params = [_sampling_params(r) for r in requests]
             outputs = llm.generate(prompts, params)
             generations = outputs_to_generations(requests, outputs, state['version'])
             return {'generations': [generation_to_dict(g) for g in generations]}
@@ -415,8 +369,6 @@ def _serve(args) -> None:
             state['version'] = int(message['version'])
             state['phase'] = 'ready'
             return {'version': state['version']}
-        if op == 'shutdown':
-            return {'ok': True}
         raise RuntimeError('unknown op: ' + str(op))
 
     try:
@@ -425,10 +377,9 @@ def _serve(args) -> None:
             try:
                 reply = handle(message)
             except Exception as exc:  # 让客户端拿到可读错误并终止本阶段
-                reply = {'error': '%s: %s' % (type(exc).__name__, exc)}
+                socket.send_string(json.dumps({'error': '%s: %s' % (type(exc).__name__, exc)}))
+                raise
             socket.send_string(json.dumps(reply))
-            if message.get('op') == 'shutdown':
-                break
     finally:
         socket.close(0)
         context.term()

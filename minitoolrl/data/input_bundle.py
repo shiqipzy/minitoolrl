@@ -10,11 +10,12 @@ import hashlib
 import json
 from pathlib import Path
 
-from minitoolrl.paths import RESEARCH_ROOT
+from minitoolrl.paths import ARTIFACTS_ROOT
 
 VERSION = 'all-restock-v1-20261011'
-INPUT_PACKAGE_ID = 'full_chain_all_restock_20261011_v1'
-DEFAULT_ROOT = RESEARCH_ROOT / INPUT_PACKAGE_ID / 'inputs_bundle'
+INPUT_PACKAGE_ID = 'all_restock_registry_20261016'
+DEFAULT_ROOT = ARTIFACTS_ROOT / 'inputs'
+CURRENT_MANIFEST_SHA256 = '864682a89e62af6aa0770d889670c725a20465cc00807697b8270984886ea576'
 MARKER = 'input_protocol.json'
 # 已有输入包内的文件名属于存储格式，源码改名不改写已有数据。
 MANIFEST = 'consistent_inputs_manifest.json'
@@ -37,13 +38,17 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def verify_bundle(root, *, require_validation=True):
+def verify_bundle(root, *, require_validation=True, expected_manifest_sha256=None):
     """供打包和启动使用：核对版本、文件身份、准备记录与 SFT 镜像。
 
     不读取逐条任务，也不重复执行生成时的工具调用。
     require_validation=False 用于新包写入准备记录前的文件核对。
+    训练、打包与 CLI 传入固定 manifest 哈希；重建入口只核对源包自身的完整性。
     """
     root = Path(root)
+    if expected_manifest_sha256 is not None and sha(root / MANIFEST) != expected_manifest_sha256:
+        raise ValueError('Input bundle is not the pinned registry bundle: expected manifest SHA256 '
+                         + expected_manifest_sha256)
     protocol = json.loads((root / MARKER).read_text(encoding='utf-8'))
     manifest = json.loads((root / MANIFEST).read_text(encoding='utf-8'))
     if protocol['input_version'] != VERSION or manifest['input_version'] != VERSION:
@@ -72,10 +77,12 @@ def verify_bundle(root, *, require_validation=True):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=DEFAULT_ROOT, help='已有输入包目录')
+    parser.add_argument('--root', type=Path, default=DEFAULT_ROOT, help='当前固定 registry 输入包目录')
     parser.add_argument('--verify', action='store_true', required=True)
     args = parser.parse_args()
-    print(json.dumps(verify_bundle(args.root), ensure_ascii=False, indent=2))
+    result = verify_bundle(args.root, expected_manifest_sha256=CURRENT_MANIFEST_SHA256)
+    print(json.dumps(dict(result, manifest_sha256=CURRENT_MANIFEST_SHA256, tool_order='registry'),
+                     ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

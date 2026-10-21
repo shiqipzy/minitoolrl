@@ -1,14 +1,28 @@
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 .venv/
-*.egg-info/
-/build/
-/dist/
+dist/
+build/
+minitoolrl/results/
+# Local experiment products stay on disk and are not tracked by Git.
+minitoolrl/artifacts/
+
+# Local inputs, caches, editor state and temporary deployment files.
+/tmp/
+/CLEANUP_*.md
 /_archive/
+/models/
+/data/
+/runs/
 /.workbuddy/
 /.claude/
 /.agents/
+/.vscode/
+**/.secrets/
+
+# Credentials, model weights and generated experiment artifacts.
 .env
 .env.*
 *.pem
@@ -23,7 +37,4 @@ __pycache__/
 *.log
 *.zip
 *.tar.gz
-/models/
-/data/
-/runs/
-/minitoolrl/artifacts/
+*.tgz

@@ -9,8 +9,7 @@ import copy
 import hashlib
 import json
 from collections import Counter
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Tuple
+from typing import Any, Dict, List, Mapping, Tuple
 
 from minitoolrl.data.decomposition_tasks import held_out_reason
 from minitoolrl.env import policy as P
@@ -34,28 +33,10 @@ SEED_START = {
 SEED_SCAN_LIMIT = 200_000
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(8 * 1024**2), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def canonical_world_hash(world: Mapping[str, Any]) -> str:
     cleaned = {k: v for k, v in world.items() if k not in ("_seed", "task_id", "prompt")}
     payload = json.dumps(cleaned, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def dump_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def render_prompt_pair(inst: TaskInstance) -> Dict[str, str]:
@@ -207,51 +188,4 @@ def collect_family(
         "attempted": attempted,
         "rejected": dict(rejected),
         "strata": None if need is None else {cell: n // 6 for cell in need},
-    }
-
-
-def build_run_plan(checkpoints: Mapping[str, Mapping[str, str]]) -> Dict[str, Any]:
-    jobs = []
-    for tag in MODEL_TAGS:
-        env_name = f"{tag.upper()}_MODEL"
-        jobs.append(
-            {
-                "tag": tag,
-                "model_env": env_name,
-                "expected_weight_sha256": checkpoints[tag]["sha256"],
-                "recorded_model_path": checkpoints[tag]["recorded_path"],
-                "argv": [
-                    "python",
-                    "-m",
-                    "minitoolrl.eval.evaluate",
-                    "--model",
-                    f"${{{env_name}}}",
-                    "--pool",
-                    "${EXP_DIR}/test_comp_suite.jsonl",
-                    "--out-dir",
-                    f"${{EXP_DIR}}/run/{tag}/greedy",
-                    "--tag",
-                    tag,
-                    "--mode",
-                    "greedy",
-                    "--batch-size",
-                    "8",
-                    "--max-seconds",
-                    "1800",
-                ],
-            }
-        )
-    return {
-        "required_environment": ["EXP_DIR", *(f"{tag.upper()}_MODEL" for tag in MODEL_TAGS)],
-        "jobs": jobs,
-        "after_jobs": [
-            "python",
-            "-m",
-            "minitoolrl.eval.analyze_comp_suite",
-            "--root",
-            "${EXP_DIR}",
-        ],
-        "execution_order": list(MODEL_TAGS),
-        "parallel_safe": False,
-        "note": "Run each model once to keep GPU memory and logs isolated; resume is supported.",
     }
